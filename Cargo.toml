@@ -1,0 +1,11 @@
+[package]
+name = "more-structures"
+publish = false
+edition = "2024"
+description = "A few weird data structures"
+repository = "https://github.com/Arajtav/more-structures"
+license = "Apache-2.0"
+keywords = []
+categories = ["data-structures"]
+
+[dependencies]
