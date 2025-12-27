@@ -126,6 +126,10 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
     pub fn iter(&self) -> OverwritingRingBufferIter<'_, T, L> {
         OverwritingRingBufferIter { orb: self, pos: 0 }
     }
+
+    pub fn iter_mut(&mut self) -> OverwritingRingBufferIterMut<'_, T, L> {
+        <&mut Self as IntoIterator>::into_iter(self)
+    }
 }
 
 pub struct OverwritingRingBufferIter<'a, T, const L: usize> {
@@ -183,6 +187,42 @@ impl<T, const L: usize> IntoIterator for OverwritingRingBuf<T, L> {
 
     fn into_iter(self) -> Self::IntoIter {
         OverwritingRingBufferIntoIter { orb: self, pos: 0 }
+    }
+}
+
+pub struct OverwritingRingBufferIterMut<'a, T, const L: usize> {
+    orb: *mut OverwritingRingBuf<T, L>,
+    pos: usize,
+    _marker: std::marker::PhantomData<&'a mut T>,
+}
+
+impl<'a, T, const L: usize> Iterator for OverwritingRingBufferIterMut<'a, T, L> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // was a valid mut ref before
+        let orb = unsafe { &mut *self.orb };
+        if self.pos >= orb.length {
+            None
+        } else {
+            let idx = orb.read_index(self.pos);
+            self.pos += 1;
+            // between [0, len)
+            Some(unsafe { orb.inner[idx].assume_init_mut() })
+        }
+    }
+}
+
+impl<'a, T, const L: usize> IntoIterator for &'a mut OverwritingRingBuf<T, L> {
+    type Item = &'a mut T;
+    type IntoIter = OverwritingRingBufferIterMut<'a, T, L>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        OverwritingRingBufferIterMut {
+            orb: self,
+            pos: 0,
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
@@ -246,5 +286,21 @@ mod tests {
         buf.push(8);
         buf.push(9);
         assert_eq!(buf.into_iter().collect::<Vec<i32>>(), vec![2, 4, 8, 9]);
+    }
+
+    #[test]
+    fn iters() {
+        let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
+        buf.push(1);
+        buf.push(2);
+        buf.push(3);
+        buf.push(4);
+        for el in &mut buf {
+            *el *= 4;
+        }
+        assert_eq!(
+            buf.iter().copied().collect::<Vec<i32>>(),
+            vec![4, 8, 12, 16]
+        );
     }
 }
