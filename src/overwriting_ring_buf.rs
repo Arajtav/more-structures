@@ -28,12 +28,12 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
 
     #[inline(always)]
     fn write_index(&self, i: usize) -> usize {
-        (self.wr_index + i) % L
+        self.wr_index.wrapping_add(i) % L
     }
 
     #[inline(always)]
     fn read_index(&self, i: usize) -> usize {
-        (self.wr_index.wrapping_sub(self.length) + i) % L
+        self.wr_index.wrapping_sub(self.length).wrapping_add(i) % L
     }
 
     pub fn push(&mut self, new: T) -> Option<T> {
@@ -122,6 +122,68 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
         self.length = new_len;
         self.wr_index = self.write_index(new_len);
     }
+
+    pub fn iter(&self) -> OverwritingRingBufferIter<'_, T, L> {
+        OverwritingRingBufferIter { orb: self, pos: 0 }
+    }
+}
+
+pub struct OverwritingRingBufferIter<'a, T, const L: usize> {
+    orb: &'a OverwritingRingBuf<T, L>,
+    pos: usize,
+}
+
+impl<'a, T, const L: usize> Iterator for OverwritingRingBufferIter<'a, T, L> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos >= self.orb.length {
+            None
+        } else {
+            let idx = self.orb.read_index(self.pos);
+            self.pos += 1;
+            // between [0, len)
+            Some(unsafe { self.orb.inner[idx].assume_init_ref() })
+        }
+    }
+}
+
+impl<'a, T, const L: usize> IntoIterator for &'a OverwritingRingBuf<T, L> {
+    type Item = &'a T;
+    type IntoIter = OverwritingRingBufferIter<'a, T, L>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        OverwritingRingBufferIter { orb: self, pos: 0 }
+    }
+}
+
+pub struct OverwritingRingBufferIntoIter<T, const L: usize> {
+    orb: OverwritingRingBuf<T, L>,
+    pos: usize,
+}
+
+impl<T, const L: usize> Iterator for OverwritingRingBufferIntoIter<T, L> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos >= self.orb.length {
+            None
+        } else {
+            let idx = self.orb.read_index(self.pos);
+            self.pos += 1;
+            // between [0, len)
+            Some(unsafe { self.orb.inner[idx].assume_init_read() })
+        }
+    }
+}
+
+impl<T, const L: usize> IntoIterator for OverwritingRingBuf<T, L> {
+    type Item = T;
+    type IntoIter = OverwritingRingBufferIntoIter<T, L>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        OverwritingRingBufferIntoIter { orb: self, pos: 0 }
+    }
 }
 
 #[cfg(test)]
@@ -157,11 +219,7 @@ mod tests {
         buf.push(4);
         assert_eq!(buf.pop(), Some(1));
         buf.push(5);
-        assert_eq!(buf.pop(), Some(2));
-        assert_eq!(buf.pop(), Some(3));
-        assert_eq!(buf.pop(), Some(4));
-        assert_eq!(buf.pop(), Some(5));
-        assert!(buf.is_empty());
+        assert_eq!(buf.into_iter().collect::<Vec<i32>>(), vec![2, 3, 4, 5]);
     }
 
     #[test]
@@ -173,8 +231,7 @@ mod tests {
         assert!(buf.is_empty());
         buf.push(3);
         buf.push(2);
-        assert_eq!(buf.pop(), Some(3));
-        assert_eq!(buf.pop(), Some(2));
+        assert_eq!(buf.into_iter().collect::<Vec<i32>>(), vec![3, 2]);
     }
 
     #[test]
@@ -188,9 +245,6 @@ mod tests {
         assert!(buf.len() == 2);
         buf.push(8);
         buf.push(9);
-        assert_eq!(buf.pop(), Some(2));
-        assert_eq!(buf.pop(), Some(4));
-        assert_eq!(buf.pop(), Some(8));
-        assert_eq!(buf.pop(), Some(9));
+        assert_eq!(buf.into_iter().collect::<Vec<i32>>(), vec![2, 4, 8, 9]);
     }
 }
