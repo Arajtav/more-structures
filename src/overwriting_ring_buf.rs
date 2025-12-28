@@ -21,8 +21,7 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
         Self {
             wr_index: 0,
             length: 0,
-            // MaybeUninit does not need to be initialized i guess?
-            inner: unsafe { MaybeUninit::uninit().assume_init() },
+            inner: [const { MaybeUninit::uninit() }; L],
         }
     }
 
