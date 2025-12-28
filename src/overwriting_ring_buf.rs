@@ -1,5 +1,6 @@
 use std::mem::MaybeUninit;
 
+// L > 0
 pub struct OverwritingRingBuf<T, const L: usize> {
     // index of the next element to write to.
     // always in [0; L)
@@ -18,6 +19,7 @@ impl<T, const L: usize> Default for OverwritingRingBuf<T, L> {
 impl<T, const L: usize> OverwritingRingBuf<T, L> {
     #[must_use]
     pub fn new() -> Self {
+        const { assert!(L > 0) }
         Self {
             wr_index: 0,
             length: 0,
