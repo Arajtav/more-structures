@@ -2,10 +2,9 @@ use std::mem::MaybeUninit;
 
 // L > 0
 pub struct OverwritingRingBuf<T, const L: usize> {
-    // index of the next element to write to.
-    // always in [0; L)
+    /// Index of the next element to be written to. always in [0; L).
     wr_index: usize,
-    // always in [0; L]
+    /// The number of valid elements. always in [0; L].
     length: usize,
     inner: [MaybeUninit<T>; L],
 }
@@ -32,14 +31,18 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
         self.wr_index.wrapping_add(i) % L
     }
 
+    /// Converts logical to physical indexes in self.inner.
+    /// Guaranteed to return valid indexes for `i < self.length`.
+    /// 0 is the oldest element. self.length-1 is the newest.
     #[inline(always)]
     fn read_index(&self, i: usize) -> usize {
+        debug_assert!(i < self.length);
         self.wr_index.wrapping_sub(self.length).wrapping_add(i) % L
     }
 
     pub fn push(&mut self, new: T) -> Option<T> {
         if self.is_full() {
-            // written to before
+            // SAFETY: length == L => all elements are initialized.
             let old = unsafe { self.inner[self.wr_index].assume_init_read() };
             self.inner[self.wr_index].write(new);
             self.wr_index = self.write_index(1);
@@ -54,10 +57,9 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
 
     pub fn clear(&mut self) {
         for i in 0..self.length {
-            let idx = self.read_index(i);
-            // written to before
+            // SAFETY: 0..self.length covers all the elements.
             unsafe {
-                self.inner[idx].assume_init_drop();
+                self.inner[self.read_index(i)].assume_init_drop();
             }
         }
         self.length = 0;
@@ -89,11 +91,11 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
             return None;
         }
 
-        // written to before
-        let old = unsafe { self.inner[self.read_index(0)].assume_init_read() };
+        let idx = self.read_index(0);
         self.length -= 1;
 
-        Some(old)
+        // SAFETY: self.length > 0; read_index(0) is guaranteed to return the oldest element.
+        Some(unsafe { self.inner[idx].assume_init_read() })
     }
 
     pub fn retain<F: FnMut(&T) -> bool>(&mut self, mut f: F) {
@@ -101,27 +103,37 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
             return;
         }
 
-        let mut new_len = 0;
+        #[cfg(debug_assertions)]
+        let debug_tmp = self.read_index(0);
 
+        let mut j = 0;
         for i in 0..self.length {
-            let idx = self.read_index(i);
-            // written to before
-            let current = unsafe { self.inner[idx].assume_init_read() };
+            // SAFETY: the element is in 0..self.length, therefore is valid.
+            let current = unsafe { self.inner[self.read_index(i)].assume_init_read() };
 
             if f(&current) {
-                if new_len != i {
-                    let target_idx = self.read_index(new_len);
-                    self.inner[target_idx].write(current);
+                // `current` is a copy, we either write it into a different place or forget it if it
+                // is in the right place.
+                if i == j {
+                    std::mem::forget(current);
+                } else {
+                    self.inner[self.read_index(j)].write(current);
                 }
-                new_len += 1;
+                j += 1;
             } else {
-                // the element is a copy. the original is kept where it was.
-                std::mem::forget(current);
+                drop(current);
             }
         }
 
-        self.length = new_len;
-        self.wr_index = self.write_index(new_len);
+        // wr_index must be read_index(0) + length
+        self.wr_index = (self.wr_index.wrapping_sub(self.length).wrapping_add(j)) % L;
+        self.length = j;
+
+        // make sure after those changes read_index still points to the same element.
+        #[cfg(debug_assertions)]
+        if !self.is_empty() {
+            debug_assert_eq!(debug_tmp, self.read_index(0));
+        }
     }
 
     pub fn iter(&self) -> OverwritingRingBufferIter<'_, T, L> {
@@ -147,7 +159,7 @@ impl<'a, T, const L: usize> Iterator for OverwritingRingBufferIter<'a, T, L> {
         } else {
             let idx = self.orb.read_index(self.pos);
             self.pos += 1;
-            // between [0, len)
+            // SAFETY: the element is in 0..self.length, therefore is valid.
             Some(unsafe { self.orb.inner[idx].assume_init_ref() })
         }
     }
@@ -176,7 +188,7 @@ impl<T, const L: usize> Iterator for OverwritingRingBufferIntoIter<T, L> {
         } else {
             let idx = self.orb.read_index(self.pos);
             self.pos += 1;
-            // between [0, len)
+            // SAFETY: the element is in 0..self.length, therefore is valid.
             Some(unsafe { self.orb.inner[idx].assume_init_read() })
         }
     }
@@ -201,14 +213,14 @@ impl<'a, T, const L: usize> Iterator for OverwritingRingBufferIterMut<'a, T, L> 
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // was a valid mut ref before
+        // SAFETY: the pointer was a valid mutable reference before.
         let orb = unsafe { &mut *self.orb };
         if self.pos >= orb.length {
             None
         } else {
             let idx = orb.read_index(self.pos);
             self.pos += 1;
-            // between [0, len)
+            // SAFETY: the element is in 0..self.length, therefore is valid.
             Some(unsafe { orb.inner[idx].assume_init_mut() })
         }
     }
@@ -282,8 +294,10 @@ mod tests {
         buf.push(2);
         buf.push(3);
         buf.push(4);
-        buf.retain(|e| e % 2 == 0);
-        assert!(buf.len() == 2);
+
+        buf.retain(|e| e % 2 == 0); // remove odd elements
+        assert_eq!(buf.iter().copied().collect::<Vec<i32>>(), vec![2, 4]);
+
         buf.push(8);
         buf.push(9);
         assert_eq!(buf.into_iter().collect::<Vec<i32>>(), vec![2, 4, 8, 9]);
