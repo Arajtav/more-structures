@@ -136,6 +136,39 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
         }
     }
 
+    // a bit modified copy of retain
+    pub fn retain_mut<F: FnMut(&mut T) -> bool>(&mut self, mut f: F) {
+        if self.is_empty() {
+            return;
+        }
+
+        #[cfg(debug_assertions)]
+        let debug_tmp = self.read_index(0);
+
+        let mut j = 0;
+        for i in 0..self.length {
+            // SAFETY: the element is in 0..self.length, therefore is valid.
+            let mut current = unsafe { self.inner[self.read_index(i)].assume_init_read() };
+
+            if f(&mut current) {
+                self.inner[self.read_index(j)].write(current);
+                j += 1;
+            } else {
+                drop(current);
+            }
+        }
+
+        // wr_index must be read_index(0) + length
+        self.wr_index = (self.wr_index.wrapping_sub(self.length).wrapping_add(j)) % L;
+        self.length = j;
+
+        // make sure after those changes read_index still points to the same element.
+        #[cfg(debug_assertions)]
+        if !self.is_empty() {
+            debug_assert_eq!(debug_tmp, self.read_index(0));
+        }
+    }
+
     pub fn iter(&self) -> OverwritingRingBufferIter<'_, T, L> {
         OverwritingRingBufferIter { orb: self, pos: 0 }
     }
@@ -317,5 +350,25 @@ mod tests {
             buf.iter().copied().collect::<Vec<i32>>(),
             vec![4, 8, 12, 16]
         );
+    }
+
+    #[test]
+    fn retain_mut() {
+        let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
+        buf.push(1);
+        buf.push(2);
+        buf.push(3);
+        buf.push(4);
+
+        // remove odd elements, mul even by 4
+        buf.retain_mut(|e| {
+            *e *= 4;
+            *e % 8 == 0
+        });
+        assert_eq!(buf.iter().copied().collect::<Vec<i32>>(), vec![8, 16]);
+
+        buf.push(8);
+        buf.push(9);
+        assert_eq!(buf.into_iter().collect::<Vec<i32>>(), vec![8, 16, 8, 9]);
     }
 }
