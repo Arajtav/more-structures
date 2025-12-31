@@ -303,8 +303,8 @@ mod tests {
     fn basic_info() {
         let buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
         assert!(buf.is_empty());
-        assert!(buf.capacity() == 4);
-        assert!(buf.is_empty());
+        assert_eq!(buf.capacity(), 4);
+        assert!(!buf.is_full());
     }
 
     #[test]
@@ -416,5 +416,24 @@ mod tests {
     fn out_of_bounds_index() {
         let buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
         let _ = buf[0];
+    }
+
+    #[test]
+    fn zst() {
+        assert_eq!(std::mem::size_of::<()>(), 0);
+        let mut buf: OverwritingRingBuf<(), 4> = OverwritingRingBuf::new();
+        assert_eq!(buf.capacity(), 4);
+        assert!(buf.is_empty());
+
+        buf.push(());
+        assert_eq!(buf.len(), 1);
+
+        buf.push(());
+        buf.push(());
+        buf.push(());
+        assert_eq!(buf.len(), 4);
+
+        assert_eq!(buf.pop(), Some(()));
+        assert_eq!(buf.into_iter().collect::<Vec<()>>(), vec![(), (), ()]);
     }
 }
