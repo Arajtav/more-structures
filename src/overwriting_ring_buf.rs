@@ -12,6 +12,15 @@ pub struct OverwritingRingBuf<T, const L: usize> {
     inner: [MaybeUninit<T>; L],
 }
 
+impl<T, const L: usize> Drop for OverwritingRingBuf<T, L> {
+    fn drop(&mut self) {
+        for i in 0..self.length {
+            // SAFETY: the element is in 0..self.length, therefore is valid.
+            unsafe { self.inner[self.read_index(i)].assume_init_drop() };
+        }
+    }
+}
+
 impl<T, const L: usize> Default for OverwritingRingBuf<T, L> {
     fn default() -> Self {
         Self::new()
