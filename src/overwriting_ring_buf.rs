@@ -27,6 +27,63 @@ impl<T, const L: usize> Default for OverwritingRingBuf<T, L> {
     }
 }
 
+impl<T: std::fmt::Debug, const L: usize> std::fmt::Debug for OverwritingRingBuf<T, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut list = f.debug_list();
+        list.entries(self.iter());
+        list.finish()
+    }
+}
+
+impl<T: Clone, const L: usize> Clone for OverwritingRingBuf<T, L> {
+    fn clone(&self) -> Self {
+        let mut inner = [const { MaybeUninit::uninit() }; L];
+
+        for (i, item) in inner.iter_mut().enumerate().take(self.length) {
+            // SAFETY: the element is in 0..self.length, therefore is valid.
+            item.write(unsafe { self.inner[self.read_index(i)].assume_init_ref() }.clone());
+        }
+
+        Self {
+            // new index, since the elements were written from the beginning.
+            wr_index: if self.length == L { 0 } else { self.length },
+            length: self.length,
+            inner,
+        }
+    }
+}
+
+// TODO: Not possible as there is Drop.
+// impl<T: Copy, const L: usize> Copy for OverwritingRingBuf<T, L> {}
+
+impl<T: PartialEq, const L: usize> PartialEq for OverwritingRingBuf<T, L> {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl<T: Eq, const L: usize> Eq for OverwritingRingBuf<T, L> {}
+
+impl<T: PartialOrd, const L: usize> PartialOrd for OverwritingRingBuf<T, L> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.iter().partial_cmp(other.iter())
+    }
+}
+
+impl<T: Ord, const L: usize> Ord for OverwritingRingBuf<T, L> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.iter().cmp(other.iter())
+    }
+}
+
+impl<T: std::hash::Hash, const L: usize> std::hash::Hash for OverwritingRingBuf<T, L> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for item in self {
+            item.hash(state);
+        }
+    }
+}
+
 impl<T, const L: usize> OverwritingRingBuf<T, L> {
     #[must_use]
     pub fn new() -> Self {
@@ -444,5 +501,21 @@ mod tests {
 
         assert_eq!(buf.pop(), Some(()));
         assert_eq!(buf.into_iter().collect::<Vec<()>>(), vec![(), (), ()]);
+    }
+
+    #[test]
+    fn clone_eq() {
+        let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
+        buf.push(6);
+        buf.push(8);
+        buf.push(9);
+        buf.push(10);
+        buf.push(11);
+        let buf2 = buf.clone();
+        assert_eq!(buf, buf2);
+        assert_eq!(
+            buf.into_iter().collect::<Vec<i32>>(),
+            buf2.into_iter().collect::<Vec<i32>>()
+        );
     }
 }
