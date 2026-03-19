@@ -1,7 +1,19 @@
-use std::{
-    mem::MaybeUninit,
-    ops::{Index, IndexMut},
-};
+mod clone;
+mod debug;
+mod default;
+mod eq;
+mod hash;
+mod index;
+mod into_iter;
+mod iter;
+mod iter_mut;
+mod ord;
+
+pub use into_iter::IntoIter;
+pub use iter::Iter;
+pub use iter_mut::IterMut;
+
+use std::mem::MaybeUninit;
 
 // L > 0
 pub struct OverwritingRingBuf<T, const L: usize> {
@@ -17,69 +29,6 @@ impl<T, const L: usize> Drop for OverwritingRingBuf<T, L> {
         for i in 0..self.length {
             // SAFETY: the element is in 0..self.length, therefore is valid.
             unsafe { self.inner[self.read_index(i)].assume_init_drop() };
-        }
-    }
-}
-
-impl<T, const L: usize> Default for OverwritingRingBuf<T, L> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T: std::fmt::Debug, const L: usize> std::fmt::Debug for OverwritingRingBuf<T, L> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut list = f.debug_list();
-        list.entries(self.iter());
-        list.finish()
-    }
-}
-
-impl<T: Clone, const L: usize> Clone for OverwritingRingBuf<T, L> {
-    fn clone(&self) -> Self {
-        let mut inner = [const { MaybeUninit::uninit() }; L];
-
-        for (i, item) in inner.iter_mut().enumerate().take(self.length) {
-            // SAFETY: the element is in 0..self.length, therefore is valid.
-            item.write(unsafe { self.inner[self.read_index(i)].assume_init_ref() }.clone());
-        }
-
-        Self {
-            // new index, since the elements were written from the beginning.
-            wr_index: if self.length == L { 0 } else { self.length },
-            length: self.length,
-            inner,
-        }
-    }
-}
-
-// TODO: Not possible as there is Drop.
-// impl<T: Copy, const L: usize> Copy for OverwritingRingBuf<T, L> {}
-
-impl<T: PartialEq, const L: usize> PartialEq for OverwritingRingBuf<T, L> {
-    fn eq(&self, other: &Self) -> bool {
-        self.iter().eq(other.iter())
-    }
-}
-
-impl<T: Eq, const L: usize> Eq for OverwritingRingBuf<T, L> {}
-
-impl<T: PartialOrd, const L: usize> PartialOrd for OverwritingRingBuf<T, L> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.iter().partial_cmp(other.iter())
-    }
-}
-
-impl<T: Ord, const L: usize> Ord for OverwritingRingBuf<T, L> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.iter().cmp(other.iter())
-    }
-}
-
-impl<T: std::hash::Hash, const L: usize> std::hash::Hash for OverwritingRingBuf<T, L> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        for item in self {
-            item.hash(state);
         }
     }
 }
@@ -237,136 +186,14 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
             debug_assert_eq!(debug_tmp, self.read_index(0));
         }
     }
-
-    pub fn iter(&self) -> OverwritingRingBufferIter<'_, T, L> {
-        OverwritingRingBufferIter { orb: self, pos: 0 }
-    }
-
-    pub fn iter_mut(&mut self) -> OverwritingRingBufferIterMut<'_, T, L> {
-        <&mut Self as IntoIterator>::into_iter(self)
-    }
-}
-
-pub struct OverwritingRingBufferIter<'a, T, const L: usize> {
-    orb: &'a OverwritingRingBuf<T, L>,
-    pos: usize,
-}
-
-impl<'a, T, const L: usize> Iterator for OverwritingRingBufferIter<'a, T, L> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos >= self.orb.length {
-            None
-        } else {
-            let idx = self.orb.read_index(self.pos);
-            self.pos += 1;
-            // SAFETY: the element is in 0..self.length, therefore is valid.
-            Some(unsafe { self.orb.inner[idx].assume_init_ref() })
-        }
-    }
-}
-
-impl<'a, T, const L: usize> IntoIterator for &'a OverwritingRingBuf<T, L> {
-    type Item = &'a T;
-    type IntoIter = OverwritingRingBufferIter<'a, T, L>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        OverwritingRingBufferIter { orb: self, pos: 0 }
-    }
-}
-
-pub struct OverwritingRingBufferIntoIter<T, const L: usize> {
-    orb: OverwritingRingBuf<T, L>,
-    pos: usize,
-}
-
-impl<T, const L: usize> Iterator for OverwritingRingBufferIntoIter<T, L> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos >= self.orb.length {
-            None
-        } else {
-            let idx = self.orb.read_index(self.pos);
-            self.pos += 1;
-            // SAFETY: the element is in 0..self.length, therefore is valid.
-            Some(unsafe { self.orb.inner[idx].assume_init_read() })
-        }
-    }
-}
-
-impl<T, const L: usize> IntoIterator for OverwritingRingBuf<T, L> {
-    type Item = T;
-    type IntoIter = OverwritingRingBufferIntoIter<T, L>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        OverwritingRingBufferIntoIter { orb: self, pos: 0 }
-    }
-}
-
-pub struct OverwritingRingBufferIterMut<'a, T, const L: usize> {
-    orb: *mut OverwritingRingBuf<T, L>,
-    pos: usize,
-    _marker: std::marker::PhantomData<&'a mut T>,
-}
-
-impl<'a, T, const L: usize> Iterator for OverwritingRingBufferIterMut<'a, T, L> {
-    type Item = &'a mut T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // SAFETY: the pointer was a valid mutable reference before.
-        let orb = unsafe { &mut *self.orb };
-        if self.pos >= orb.length {
-            None
-        } else {
-            let idx = orb.read_index(self.pos);
-            self.pos += 1;
-            // SAFETY: the element is in 0..self.length, therefore is valid.
-            Some(unsafe { orb.inner[idx].assume_init_mut() })
-        }
-    }
-}
-
-impl<'a, T, const L: usize> IntoIterator for &'a mut OverwritingRingBuf<T, L> {
-    type Item = &'a mut T;
-    type IntoIter = OverwritingRingBufferIterMut<'a, T, L>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        OverwritingRingBufferIterMut {
-            orb: self,
-            pos: 0,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T, const L: usize> Index<usize> for OverwritingRingBuf<T, L> {
-    type Output = T;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        assert!(index < self.length);
-
-        // SAFETY: the element is in 0..self.length, therefore is valid.
-        unsafe { self.inner[self.read_index(index)].assume_init_ref() }
-    }
-}
-
-impl<T, const L: usize> IndexMut<usize> for OverwritingRingBuf<T, L> {
-    fn index_mut(&mut self, index: usize) -> &mut T {
-        assert!(index < self.length);
-
-        // SAFETY: the element is in 0..self.length, therefore is valid.
-        unsafe { self.inner[self.read_index(index)].assume_init_mut() }
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::OverwritingRingBuf;
+    use super::*;
 
     #[test]
-    fn basic_info() {
+    fn test_basic_info() {
         let buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
         assert!(buf.is_empty());
         assert_eq!(buf.capacity(), 4);
@@ -374,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn push_overwrite() {
+    fn test_push_overwrite() {
         let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
 
         assert_eq!(buf.push(1), None);
@@ -386,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn pop() {
+    fn test_pop() {
         let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
         buf.push(1);
         buf.push(2);
@@ -398,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn clear() {
+    fn test_clear() {
         let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
         buf.push(0);
         assert!(buf.len() == 1);
@@ -410,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn retain() {
+    fn test_retain() {
         let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
         buf.push(1);
         buf.push(2);
@@ -426,23 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn iters() {
-        let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
-        buf.push(1);
-        buf.push(2);
-        buf.push(3);
-        buf.push(4);
-        for el in &mut buf {
-            *el *= 4;
-        }
-        assert_eq!(
-            buf.iter().copied().collect::<Vec<i32>>(),
-            vec![4, 8, 12, 16]
-        );
-    }
-
-    #[test]
-    fn retain_mut() {
+    fn test_retain_mut() {
         let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
         buf.push(1);
         buf.push(2);
@@ -462,30 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn index() {
-        let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
-        buf.push(6);
-        buf.push(7);
-        buf.push(8);
-        buf.push(9);
-
-        buf[2] = 10;
-
-        assert_eq!(buf[0], 6);
-        assert_eq!(buf[1], 7);
-        assert_eq!(buf[2], 10);
-        assert_eq!(buf[3], 9);
-    }
-
-    #[test]
-    #[should_panic(expected = "assertion failed: index < self.length")]
-    fn out_of_bounds_index() {
-        let buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
-        let _ = buf[0];
-    }
-
-    #[test]
-    fn zst() {
+    fn test_zst() {
         assert_eq!(std::mem::size_of::<()>(), 0);
         let mut buf: OverwritingRingBuf<(), 4> = OverwritingRingBuf::new();
         assert_eq!(buf.capacity(), 4);
@@ -501,21 +289,5 @@ mod tests {
 
         assert_eq!(buf.pop(), Some(()));
         assert_eq!(buf.into_iter().collect::<Vec<()>>(), vec![(), (), ()]);
-    }
-
-    #[test]
-    fn clone_eq() {
-        let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
-        buf.push(6);
-        buf.push(8);
-        buf.push(9);
-        buf.push(10);
-        buf.push(11);
-        let buf2 = buf.clone();
-        assert_eq!(buf, buf2);
-        assert_eq!(
-            buf.into_iter().collect::<Vec<i32>>(),
-            buf2.into_iter().collect::<Vec<i32>>()
-        );
     }
 }
