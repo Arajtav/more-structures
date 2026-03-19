@@ -1,3 +1,5 @@
+//! A ring buffer which overwrites old values if there is no more capacity left.
+
 mod clone;
 mod debug;
 mod default;
@@ -15,12 +17,14 @@ pub use iter_mut::IterMut;
 
 use std::mem::MaybeUninit;
 
-// L > 0
+/// A ring buffer which overwrites old values on insert when there is no capacity left.
+/// Capacity/length has to be a compile time constant greater than 0.
 pub struct OverwritingRingBuf<T, const L: usize> {
     /// Index of the next element to be written to. always in [0; L).
     wr_index: usize,
     /// The number of valid elements. always in [0; L].
     length: usize,
+    /// Inner buffer.
     inner: [MaybeUninit<T>; L],
 }
 
@@ -34,6 +38,7 @@ impl<T, const L: usize> Drop for OverwritingRingBuf<T, L> {
 }
 
 impl<T, const L: usize> OverwritingRingBuf<T, L> {
+    /// Creates a new empty `OverwritingRingBuf`.
     #[must_use]
     pub fn new() -> Self {
         const { assert!(L > 0) }
@@ -58,9 +63,10 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
         self.wr_index.wrapping_sub(self.length).wrapping_add(i) % L
     }
 
+    /// Appends a value or overwrites the oldest one.
     pub fn push(&mut self, new: T) -> Option<T> {
         if self.is_full() {
-            // SAFETY: length == L => all elements are initialized.
+            // SAFETY: length == L => all values are initialized.
             let old = unsafe { self.inner[self.wr_index].assume_init_read() };
             self.inner[self.wr_index].write(new);
             self.wr_index = self.write_index(1);
@@ -73,6 +79,7 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
         }
     }
 
+    /// Removes all values.
     pub fn clear(&mut self) {
         for i in 0..self.length {
             // SAFETY: 0..self.length covers all the elements.
@@ -84,26 +91,31 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
         self.wr_index = 0;
     }
 
+    /// Returns the number of elements.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.length
     }
 
+    /// Returns the total number of elements the buffer can hold without overwriting.
     #[inline(always)]
     pub const fn capacity(&self) -> usize {
         L
     }
 
+    /// Returns true if the ring buffer is empty.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.length == 0
     }
 
+    /// Returns true if the buffer will overwrite on next push.
     #[inline(always)]
     pub fn is_full(&self) -> bool {
         self.length == L
     }
 
+    /// Removes the last element and returns it, or None if it is empty.
     pub fn pop(&mut self) -> Option<T> {
         if self.is_empty() {
             return None;
@@ -116,6 +128,8 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
         Some(unsafe { self.inner[idx].assume_init_read() })
     }
 
+    /// Retains only the elements specified by the predicate. All elements are visited exactly once
+    /// in original order, and the original order is preserved for retained elements.
     pub fn retain<F: FnMut(&T) -> bool>(&mut self, mut f: F) {
         if self.is_empty() {
             return;
@@ -154,7 +168,8 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
         }
     }
 
-    // a bit modified copy of retain
+    /// Retains only the elements specified by the predicate. All elements are visited exactly once
+    /// in original order, and the original order is preserved for retained elements.
     pub fn retain_mut<F: FnMut(&mut T) -> bool>(&mut self, mut f: F) {
         if self.is_empty() {
             return;

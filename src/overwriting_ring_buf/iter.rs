@@ -1,11 +1,13 @@
 use crate::OverwritingRingBuf;
 
 impl<T, const L: usize> OverwritingRingBuf<T, L> {
+    /// Returns an iterator over the elements in insertion order.
     pub fn iter(&self) -> Iter<'_, T, L> {
         <&Self as IntoIterator>::into_iter(self)
     }
 }
 
+/// An iterator over the elements of an `OverwritingRingBuf`.
 pub struct Iter<'a, T, const L: usize> {
     orb: &'a OverwritingRingBuf<T, L>,
     pos: usize,

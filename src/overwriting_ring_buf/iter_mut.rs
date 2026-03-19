@@ -3,11 +3,13 @@ use std::marker::PhantomData;
 use crate::OverwritingRingBuf;
 
 impl<T, const L: usize> OverwritingRingBuf<T, L> {
+    /// Returns a mutable iterator over the elements in insertion order.
     pub fn iter_mut(&mut self) -> IterMut<'_, T, L> {
         <&mut Self as IntoIterator>::into_iter(self)
     }
 }
 
+/// A mutable iterator over the elements of an `OverwritingRingBuf`.
 pub struct IterMut<'a, T, const L: usize> {
     orb: *mut OverwritingRingBuf<T, L>,
     pos: usize,

@@ -1,5 +1,6 @@
 use crate::OverwritingRingBuf;
 
+/// An owning iterator over the elements of an `OverwritingRingBuf`.
 pub struct IntoIter<T, const L: usize> {
     orb: OverwritingRingBuf<T, L>,
     pos: usize,
