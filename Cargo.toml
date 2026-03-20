@@ -8,4 +8,5 @@ license = "Apache-2.0"
 keywords = []
 categories = ["data-structures"]
 
-[dependencies]
+[features]
+overwriting-ring-buffer = []
