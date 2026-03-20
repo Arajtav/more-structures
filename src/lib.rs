@@ -1,5 +1,6 @@
 #![allow(clippy::inline_always)]
 #![warn(missing_docs)]
+#![warn(clippy::missing_const_for_fn)]
 
 //! A crate containing a few more data structures.
 

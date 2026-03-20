@@ -40,7 +40,7 @@ impl<T, const L: usize> Drop for OverwritingRingBuf<T, L> {
 impl<T, const L: usize> OverwritingRingBuf<T, L> {
     /// Creates a new empty `OverwritingRingBuf`.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         const { assert!(L > 0) }
         Self {
             wr_index: 0,
@@ -50,7 +50,7 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
     }
 
     #[inline(always)]
-    fn write_index(&self, i: usize) -> usize {
+    const fn write_index(&self, i: usize) -> usize {
         self.wr_index.wrapping_add(i) % L
     }
 
@@ -64,7 +64,7 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
     }
 
     /// Appends a value or overwrites the oldest one.
-    pub fn push(&mut self, new: T) -> Option<T> {
+    pub const fn push(&mut self, new: T) -> Option<T> {
         if self.is_full() {
             // SAFETY: length == L => all values are initialized.
             let old = unsafe { self.inner[self.wr_index].assume_init_read() };
@@ -93,7 +93,7 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
 
     /// Returns the number of elements.
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.length
     }
 
@@ -105,13 +105,13 @@ impl<T, const L: usize> OverwritingRingBuf<T, L> {
 
     /// Returns true if the ring buffer is empty.
     #[inline(always)]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.length == 0
     }
 
     /// Returns true if the buffer will overwrite on next push.
     #[inline(always)]
-    pub fn is_full(&self) -> bool {
+    pub const fn is_full(&self) -> bool {
         self.length == L
     }
 
