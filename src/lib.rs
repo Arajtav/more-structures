@@ -8,3 +8,8 @@
 pub mod overwriting_ring_buf;
 #[cfg(feature = "overwriting-ring-buffer")]
 pub use overwriting_ring_buf::OverwritingRingBuf;
+
+#[cfg(feature = "tagged-pointer")]
+pub mod tagged_ptr;
+#[cfg(feature = "tagged-pointer")]
+pub use tagged_ptr::{TaggedConstPtr, TaggedMut, TaggedMutPtr, TaggedRef};
