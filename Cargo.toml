@@ -10,3 +10,4 @@ categories = ["data-structures"]
 
 [features]
 overwriting-ring-buffer = []
+tagged-pointer = []
