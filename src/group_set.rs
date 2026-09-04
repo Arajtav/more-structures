@@ -1,6 +1,6 @@
 //! Like a map but for checking whether 2 elements are in the same group.
 
-use std::{collections::HashMap, hash::Hash};
+use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 #[derive(PartialEq, Eq, Clone, Copy, Default)]
 struct Group(usize);
@@ -52,20 +52,28 @@ impl<T: Eq + Hash> GroupSet<T> {
     }
 
     /// Returns `true` if the item already is in the group set.
-    pub fn contains(&self, item: &T) -> bool {
+    pub fn contains<Q>(&self, item: &Q) -> bool
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.items.contains_key(item)
     }
 
     /// Groups 2 items, the first one has to already be in the group set.
     /// Returns Some(item) item if either the first one is not a part of any group or the new one is.
-    pub fn group(&mut self, existing: &T, item: T) -> Option<T> {
+    pub fn group<Q>(&mut self, existing: &Q, item: T) -> Option<T>
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         let Some(&group) = self.items.get(existing) else {
             return Some(item);
         };
 
         // Not doable actually.
         #[allow(clippy::map_entry)]
-        if self.items.contains_key(&item) {
+        if self.items.contains_key::<T>(&item) {
             Some(item)
         } else {
             self.items.insert(item, group);
@@ -74,12 +82,20 @@ impl<T: Eq + Hash> GroupSet<T> {
     }
 
     /// Tries to remove an item and returns `true` if it succeeds.
-    pub fn remove(&mut self, key: &T) -> bool {
+    pub fn remove<Q>(&mut self, key: &Q) -> bool
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.items.remove(key).is_some()
     }
 
     /// Check whether 2 items are in the same group.
-    pub fn is_same_group(&self, a: &T, b: &T) -> bool {
+    pub fn is_same_group<Q>(&self, a: &Q, b: &Q) -> bool
+    where
+        T: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         let a = self.items.get(a);
         let b = self.items.get(b);
 
