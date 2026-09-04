@@ -13,3 +13,8 @@ pub use overwriting_ring_buf::OverwritingRingBuf;
 pub mod tagged_ptr;
 #[cfg(feature = "tagged-pointer")]
 pub use tagged_ptr::{TaggedConstPtr, TaggedMut, TaggedMutPtr, TaggedRef};
+
+// #[cfg(feature = "group-set")]
+pub mod group_set;
+// #[cfg(feature = "group-set")]
+pub use group_set::GroupSet;
