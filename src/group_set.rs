@@ -61,7 +61,8 @@ impl<T: Eq + Hash> GroupSet<T> {
     }
 
     /// Groups 2 items, the first one has to already be in the group set.
-    /// Returns Some(item) item if either the first one is not a part of any group or the new one is.
+    /// Fails and returns Some(item) item if the first one is not a part of any group.
+    /// If both items are already in some groups, the groups are merged.
     pub fn group<Q>(&mut self, existing: &Q, item: T) -> Option<T>
     where
         T: Borrow<Q>,
@@ -71,14 +72,17 @@ impl<T: Eq + Hash> GroupSet<T> {
             return Some(item);
         };
 
-        // Not doable actually.
-        #[allow(clippy::map_entry)]
-        if self.items.contains_key::<T>(&item) {
-            Some(item)
+        if let Some(old_group) = self.items.get::<T>(&item).copied() {
+            for item in self.items.values_mut() {
+                if *item == old_group {
+                    *item = group;
+                }
+            }
         } else {
             self.items.insert(item, group);
-            None
         }
+
+        None
     }
 
     /// Tries to remove an item and returns `true` if it succeeds.
@@ -128,6 +132,25 @@ mod tests {
         assert_eq!(gs.new_group("a"), None);
         assert_eq!(gs.group(&"a", "b"), None);
         assert_eq!(gs.group(&"a", "c"), None);
+        assert!(gs.is_same_group(&"a", &"b"));
+        assert!(gs.is_same_group(&"b", &"c"));
+        assert!(gs.is_same_group(&"c", &"a"));
+    }
+
+    #[test]
+    fn merge() {
+        let mut gs = GroupSet::new();
+        assert_eq!(gs.new_group("a"), None);
+        assert_eq!(gs.new_group("b"), None);
+        assert_eq!(gs.new_group("c"), None);
+        assert!(!gs.is_same_group(&"a", &"b"));
+        assert!(!gs.is_same_group(&"b", &"c"));
+        assert!(!gs.is_same_group(&"c", &"a"));
+        assert_eq!(gs.group("a", "b"), None);
+        assert!(gs.is_same_group(&"a", &"b"));
+        assert!(!gs.is_same_group(&"b", &"c"));
+        assert!(!gs.is_same_group(&"c", &"a"));
+        assert_eq!(gs.group("b", "c"), None);
         assert!(gs.is_same_group(&"a", &"b"));
         assert!(gs.is_same_group(&"b", &"c"));
         assert!(gs.is_same_group(&"c", &"a"));
