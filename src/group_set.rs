@@ -38,17 +38,9 @@ impl<T: Eq + Hash> GroupSet<T> {
         }
     }
 
-    /// Tries to create a new group with one item.
-    /// Fails and returns Some(item) if the item already is in a group.
-    pub fn new_group(&mut self, item: T) -> Option<T> {
-        if self.contains(&item) {
-            Some(item)
-        } else {
-            let group = self.free.increment();
-
-            self.items.insert(item, group);
-            None
-        }
+    /// Inserts an item. Does nothing if the item already exists.
+    pub fn insert(&mut self, item: T) {
+        self.items.entry(item).or_insert(self.free.increment());
     }
 
     /// Returns `true` if the item already is in the group set.
@@ -60,29 +52,24 @@ impl<T: Eq + Hash> GroupSet<T> {
         self.items.contains_key(item)
     }
 
-    /// Groups 2 items, the first one has to already be in the group set.
-    /// Fails and returns Some(item) item if the first one is not a part of any group.
-    /// If both items are already in some groups, the groups are merged.
-    pub fn group<Q>(&mut self, existing: &Q, item: T) -> Option<T>
+    /// Merges 2 groups. Fails and returns `false` if either item was not inserted before.
+    pub fn merge<Q>(&mut self, first: &Q, second: &Q) -> bool
     where
         T: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        let Some(&group) = self.items.get(existing) else {
-            return Some(item);
+        let (Some(&group), Some(&old_group)) = (self.items.get(first), self.items.get(second))
+        else {
+            return false;
         };
 
-        if let Some(old_group) = self.items.get::<T>(&item).copied() {
-            for item in self.items.values_mut() {
-                if *item == old_group {
-                    *item = group;
-                }
+        for item in self.items.values_mut() {
+            if *item == old_group {
+                *item = group;
             }
-        } else {
-            self.items.insert(item, group);
         }
 
-        None
+        true
     }
 
     /// Tries to remove an item and returns `true` if it succeeds.
@@ -115,11 +102,15 @@ mod tests {
     fn big_test() {
         let mut gs = GroupSet::new();
         assert!(!gs.contains(&"a"));
-        assert_eq!(gs.new_group("a"), None);
+        gs.insert("a");
         assert!(gs.contains(&"a"));
-        assert_eq!(gs.new_group("a"), Some("a"));
         assert!(!gs.is_same_group(&"a", &"b"));
-        assert_eq!(gs.group(&"a", "b"), None);
+        assert!(!gs.merge(&"a", &"b"));
+        gs.insert("b");
+        assert!(!gs.is_same_group(&"a", &"b"));
+        assert!(gs.merge(&"a", &"b"));
+        assert!(gs.is_same_group(&"a", &"b"));
+        gs.insert("a");
         assert!(gs.is_same_group(&"a", &"b"));
         assert!(gs.remove(&"a"));
         assert!(!gs.is_same_group(&"a", &"b"));
@@ -127,30 +118,19 @@ mod tests {
     }
 
     #[test]
-    fn group_of_3() {
-        let mut gs = GroupSet::new();
-        assert_eq!(gs.new_group("a"), None);
-        assert_eq!(gs.group(&"a", "b"), None);
-        assert_eq!(gs.group(&"a", "c"), None);
-        assert!(gs.is_same_group(&"a", &"b"));
-        assert!(gs.is_same_group(&"b", &"c"));
-        assert!(gs.is_same_group(&"c", &"a"));
-    }
-
-    #[test]
     fn merge() {
         let mut gs = GroupSet::new();
-        assert_eq!(gs.new_group("a"), None);
-        assert_eq!(gs.new_group("b"), None);
-        assert_eq!(gs.new_group("c"), None);
+        gs.insert("a");
+        gs.insert("b");
+        gs.insert("c");
         assert!(!gs.is_same_group(&"a", &"b"));
         assert!(!gs.is_same_group(&"b", &"c"));
         assert!(!gs.is_same_group(&"c", &"a"));
-        assert_eq!(gs.group("a", "b"), None);
+        assert!(gs.merge("a", "b"));
         assert!(gs.is_same_group(&"a", &"b"));
         assert!(!gs.is_same_group(&"b", &"c"));
         assert!(!gs.is_same_group(&"c", &"a"));
-        assert_eq!(gs.group("b", "c"), None);
+        assert!(gs.merge("b", "c"));
         assert!(gs.is_same_group(&"a", &"b"));
         assert!(gs.is_same_group(&"b", &"c"));
         assert!(gs.is_same_group(&"c", &"a"));
