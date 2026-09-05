@@ -14,7 +14,7 @@ pub mod tagged_ptr;
 #[cfg(feature = "tagged-pointer")]
 pub use tagged_ptr::{TaggedConstPtr, TaggedMut, TaggedMutPtr, TaggedRef};
 
-// #[cfg(feature = "group-set")]
-pub mod group_set;
-// #[cfg(feature = "group-set")]
-pub use group_set::GroupSet;
+// #[cfg(feature = "disjoint-set")]
+pub mod disjoint_set;
+// #[cfg(feature = "disjoint-set")]
+pub use disjoint_set::DisjointSet;

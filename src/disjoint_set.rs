@@ -1,35 +1,41 @@
-//! Like a map but for checking whether 2 elements are in the same group.
+//! Disjoint set implementation with a `HashMap`.
 
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
-#[derive(PartialEq, Eq, Clone, Copy, Default)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 struct Group(usize);
 
-impl Group {
-    const fn increment(&mut self) -> Group {
-        let previous = *self;
-        self.0 = self
-            .0
-            .checked_add(1)
-            .expect("GroupSet cannot have more than usize::max groups");
-        previous
+impl Default for Group {
+    fn default() -> Self {
+        Self(usize::MAX)
     }
 }
 
-/// For grouping items.
-pub struct GroupSet<T: Eq + Hash> {
+impl Group {
+    const fn increment(&mut self) -> Group {
+        self.0 = self.0.wrapping_add(1);
+        assert!(
+            self.0 != usize::MAX,
+            "GroupSet cannot have more than usize::max groups"
+        );
+        *self
+    }
+}
+
+/// Disjoint set.
+pub struct DisjointSet<T: Eq + Hash> {
     items: HashMap<T, Group>,
     free: Group,
 }
 
-impl<T: Eq + Hash> Default for GroupSet<T> {
+impl<T: Eq + Hash> Default for DisjointSet<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Eq + Hash> GroupSet<T> {
-    /// Creates a new empty `GroupSet`.
+impl<T: Eq + Hash> DisjointSet<T> {
+    /// Creates a new empty `DisjoinSet`.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -100,7 +106,7 @@ mod tests {
 
     #[test]
     fn big_test() {
-        let mut gs = GroupSet::new();
+        let mut gs = DisjointSet::new();
         assert!(!gs.contains(&"a"));
         gs.insert("a");
         assert!(gs.contains(&"a"));
@@ -119,7 +125,7 @@ mod tests {
 
     #[test]
     fn merge() {
-        let mut gs = GroupSet::new();
+        let mut gs = DisjointSet::new();
         gs.insert("a");
         gs.insert("b");
         gs.insert("c");
