@@ -243,7 +243,7 @@ mod tests {
     fn test_clear() {
         let mut buf: OverwritingRingBuf<i32, 4> = OverwritingRingBuf::new();
         buf.push(0);
-        assert!(buf.len() == 1);
+        assert_eq!(buf.len(), 1);
         buf.clear();
         assert!(buf.is_empty());
         buf.push(3);
